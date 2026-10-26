@@ -11,6 +11,7 @@ When disconnected, any command except status first reconnects to the last iPhone
 """
 import os
 import socket
+import struct
 import threading
 import time
 
@@ -24,6 +25,7 @@ import config
 SOCK_PATH = "/run/pi-hid.sock"
 LAST_HOST = "/var/lib/pi-hid-last-host"
 PSM_CTRL, PSM_INTR = 0x11, 0x13
+SOL_BLUETOOTH, BT_SECURITY, BT_SECURITY_MEDIUM = 274, 4, 2  # from <bluetooth/bluetooth.h>
 HID_UUID = "00001124-0000-1000-8000-00805f9b34fb"
 AGENT_PATH = "/pi_agent/agent"
 PROFILE_PATH = "/pi_agent/hid"
@@ -150,6 +152,7 @@ class HidDevice:
             self._session(ctrl, intr, addr[0])
 
     def _session(self, ctrl, intr, host):
+        intr.settimeout(2)  # a host that stops reading must not hang every command
         self.ctrl, self.intr = ctrl, intr
         with open(LAST_HOST, "w") as f:
             f.write(host)
@@ -176,6 +179,8 @@ class HidDevice:
             for psm in (PSM_CTRL, PSM_INTR):
                 s = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_SEQPACKET, socket.BTPROTO_L2CAP)
                 socks.append(s)
+                # HID hosts expect an encrypted link on device-initiated channels.
+                s.setsockopt(SOL_BLUETOOTH, BT_SECURITY, struct.pack("BB", BT_SECURITY_MEDIUM, 0))
                 s.settimeout(8)
                 s.connect((host, psm))
                 s.settimeout(None)
@@ -210,9 +215,22 @@ class HidDevice:
                 ctrl.send(b"\x03")  # HANDSHAKE: unsupported request
 
     def _send(self, report_id, payload):
-        if self.intr is None:
+        intr = self.intr
+        if intr is None:
             raise RuntimeError("iPhone not connected")
-        self.intr.send(bytes([0xA1, report_id]) + bytes(payload))
+        try:
+            intr.send(bytes([0xA1, report_id]) + bytes(payload))
+        except OSError as e:
+            # Drop the session; the next command reconnects.
+            log(f"send failed ({e}), dropping the connection")
+            for s in (self.ctrl, intr):
+                if s is not None:
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+            self.ctrl = self.intr = None
+            raise RuntimeError("iPhone stopped responding; try again to reconnect")
 
     def _mouse(self, dx=0, dy=0, wheel=0):
         self._send(MOUSE_ID, [self.buttons, dx & 0xFF, dy & 0xFF, wheel & 0xFF])
@@ -296,10 +314,17 @@ def control_server(dev):
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(SOCK_PATH)
     os.chmod(SOCK_PATH, 0o666)
-    srv.listen(4)
+    srv.listen(8)
     while True:
         conn, _ = srv.accept()
-        with conn, conn.makefile("rw") as f:
+        # One thread per client: the web console keeps its connection open, and status
+        # queries must not wait behind it. dev.command serializes the actual HID reports.
+        threading.Thread(target=serve_client, args=(dev, conn), daemon=True).start()
+
+
+def serve_client(dev, conn):
+    with conn, conn.makefile("rw") as f:
+        try:
             for line in f:
                 try:
                     reply = dev.command(line.strip())
@@ -307,6 +332,8 @@ def control_server(dev):
                     reply = f"error {e}"
                 f.write(reply + "\n")
                 f.flush()
+        except OSError:
+            pass  # client went away
 
 
 class Agent(dbus.service.Object):

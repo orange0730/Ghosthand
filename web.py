@@ -3,7 +3,7 @@
 
   .venv/bin/python web.py          serves http://<pi address>:WEB_PORT (8080 by default)
 
-The page shows the frames UxPlay dumps as an MJPEG stream and turns clicks, drags, the mouse
+The page long-polls the frames UxPlay dumps (/frame.jpg) and turns clicks, drags, the mouse
 wheel and the keyboard into actions for hid_server. It can also run the AI assistant.
 """
 import base64
@@ -11,7 +11,9 @@ import hmac
 import json
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 import config
 from iphone import POINTS_H, POINTS_W, Phone, frame_files, hid_status, mirroring, perform
@@ -142,17 +144,39 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/stream.mjpg":
             self.stream()
         elif path == "/frame.jpg":
-            _, data = newest_frame()
-            if data:
-                self.send_body(data, "image/jpeg")
-            else:
-                self.send_json({"error": "no frame; is the iPhone mirroring?"}, 404)
+            self.frame(parse_qs(urlsplit(self.path).query).get("after", [""])[0])
         elif path == "/api/status":
             self.send_json(console.status())
         else:
             self.send_json({"error": "not found"}, 404)
 
+    def frame(self, after):
+        """Newest frame. With ?after=<X-Frame of the last one>, wait up to 3 s for a different
+        frame and answer 204 if none came: the page's frame loop recovers from anything."""
+        deadline = time.time() + 3
+        while True:
+            path, data = newest_frame()
+            name = os.path.basename(path) if path else ""
+            if data and name != after:
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Frame", name)
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            if not after or time.time() > deadline:
+                break
+            time.sleep(0.03)
+        if data:
+            self.send_response(204)
+            self.end_headers()
+        else:
+            self.send_json({"error": "no frame; is the iPhone mirroring?"}, 404)
+
     def stream(self):
+        """MJPEG stream of the screen, e.g. for VLC; the page itself uses /frame.jpg."""
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-store")
@@ -166,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
                                      + str(len(data)).encode() + b"\r\n\r\n" + data + b"\r\n")
                     self.wfile.flush()
-                threading.Event().wait(0.04)
+                time.sleep(0.04)
         except (BrokenPipeError, ConnectionResetError):
             pass
 

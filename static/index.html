@@ -84,7 +84,7 @@
 <main>
   <section class="phone">
     <div id="screen" tabindex="0" aria-label="iPhone 畫面,點選後可用鍵盤輸入">
-      <img id="img" src="/stream.mjpg" alt="iPhone 畫面" draggable="false">
+      <img id="img" alt="iPhone 畫面" draggable="false">
       <div id="overlay">正在連線…</div>
     </div>
     <div id="busy"></div>
@@ -306,16 +306,33 @@ async function refresh() {
     if (atEnd) log.scrollTop = log.scrollHeight;
   }
 }
-// The MJPEG stream stops when the Pi restarts the receiver; reconnect it when mirroring resumes.
-img.addEventListener('error', () => setTimeout(() => { img.src = '/stream.mjpg?' + Date.now(); }, 2000));
-let wasMirroring = false;
-setInterval(async () => {
-  await refresh();
-  const now = $('mirrorText').textContent === '鏡像中';
-  if (now && !wasMirroring) img.src = '/stream.mjpg?' + Date.now();
-  wasMirroring = now;
-}, 1500);
+setInterval(refresh, 1500);
 refresh();
+
+// ---- live screen -----------------------------------------------------------
+// Ask for the next frame as soon as the last one is shown; the server holds the request until
+// the screen changes (up to 3 s). Plain requests recover by themselves after any restart.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async function frameLoop() {
+  let last = '', shown = null;
+  for (;;) {
+    try {
+      const r = await fetch(`/frame.jpg?after=${encodeURIComponent(last)}`, { cache: 'no-store' });
+      if (r.status === 200) {
+        last = r.headers.get('X-Frame') || '';
+        const url = URL.createObjectURL(await r.blob());
+        await new Promise(done => { img.onload = img.onerror = done; img.src = url; });
+        if (shown) URL.revokeObjectURL(shown);
+        shown = url;
+      } else if (r.status !== 204) {
+        last = '';
+        await sleep(1000);  // not mirroring yet
+      }
+    } catch {
+      await sleep(1000);  // Pi unreachable or restarting
+    }
+  }
+})();
 </script>
 </body>
 </html>
