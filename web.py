@@ -101,7 +101,7 @@ console = Console()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "pi-iphone-agent"
+    server_version = "Ghosthand"
 
     def log_message(self, fmt, *args):
         pass  # one line per frame request would flood the journal

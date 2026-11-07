@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install pi-iphone-agent on a Raspberry Pi (Raspberry Pi OS / Debian 12 or 13).
+# Install Ghosthand on a Raspberry Pi (Raspberry Pi OS / Debian 12 or 13).
 # Run it as your normal user from the project folder: ./install.sh
 # It is safe to run again, e.g. after pulling a new version.
 set -euo pipefail
@@ -51,7 +51,7 @@ step "建立系統服務"
 sudo loginctl enable-linger "$USER_NAME"  # keeps /run/user/$USER_ID around for UxPlay
 sudo tee /etc/systemd/system/pi-iphone-hid.service >/dev/null <<EOF
 [Unit]
-Description=pi-iphone-agent: Bluetooth keyboard and mouse for the iPhone
+Description=Ghosthand: Bluetooth keyboard and mouse for the iPhone
 After=bluetooth.service
 Requires=bluetooth.service
 
@@ -67,7 +67,7 @@ WantedBy=multi-user.target
 EOF
 sudo tee /etc/systemd/system/pi-iphone-mirror.service >/dev/null <<EOF
 [Unit]
-Description=pi-iphone-agent: AirPlay receiver for the iPhone screen
+Description=Ghosthand: AirPlay receiver for the iPhone screen
 After=network-online.target avahi-daemon.service
 Wants=network-online.target
 
@@ -83,7 +83,7 @@ WantedBy=multi-user.target
 EOF
 sudo tee /etc/systemd/system/pi-iphone-web.service >/dev/null <<EOF
 [Unit]
-Description=pi-iphone-agent: web console
+Description=Ghosthand: web console
 After=network-online.target pi-iphone-hid.service
 Wants=network-online.target
 

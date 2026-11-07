@@ -1,4 +1,4 @@
-# pi-iphone-agent
+# Ghosthand
 
 用一台樹莓派,讓電腦(或 AI)看到並操作你的 iPhone。不需要越獄,也不需要在 iPhone 上安裝任何 App。
 
@@ -27,8 +27,8 @@
 ## 安裝(在樹莓派上)
 
 ```bash
-git clone https://github.com/orange0730/pi-iphone-agent.git
-cd pi-iphone-agent
+git clone https://github.com/orange0730/Ghosthand.git
+cd Ghosthand
 ./install.sh
 ```
 
@@ -100,7 +100,7 @@ cd pi-iphone-agent
 2. 在樹莓派上編輯設定檔,填入金鑰:
 
    ```bash
-   nano ~/pi-iphone-agent/config.env
+   nano ~/Ghosthand/config.env
    # AGENT_API_KEY=你的金鑰
    ```
 
@@ -114,7 +114,7 @@ cd pi-iphone-agent
 - 也可以在樹莓派的終端機執行:
 
   ```bash
-  cd ~/pi-iphone-agent
+  cd ~/Ghosthand
   .venv/bin/python agent.py "打開設定,查看 iOS 版本,然後回到主畫面"
   .venv/bin/python agent.py --confirm "..."     # 每個動作執行前先問你
   .venv/bin/python agent.py --dry-run "..."     # 只看模型想做什麼,不實際操作
