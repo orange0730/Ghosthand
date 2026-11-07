@@ -209,3 +209,7 @@ journalctl -u pi-iphone-mirror -f                               # 即時看日�
 | `config.py`、`config.env.example` | 設定 |
 | `hidctl.py` | 送單一藍牙指令的小工具 |
 | `install.sh`、`uninstall.sh` | 安裝與移除 |
+
+## Star 走勢
+
+[![Star History Chart](https://api.star-history.com/svg?repos=orange0730/Ghosthand&type=Date)](https://star-history.com/#orange0730/Ghosthand&Date)
