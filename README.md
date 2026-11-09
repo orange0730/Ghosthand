@@ -1,30 +1,47 @@
 # Ghosthand
 
-用一台樹莓派,讓電腦(或 AI)看到並操作你的 iPhone。不需要越獄,也不需要在 iPhone 上安裝任何 App。
+**Let AI (or you) see and control your iPhone. No jailbreak, and nothing to install on the phone.**
 
-- **看畫面**:iPhone 用內建的「螢幕鏡像輸出」(AirPlay)把畫面傳給樹莓派。
-- **操作**:樹莓派透過藍牙假裝成一組滑鼠和鍵盤,iPhone 開啟「輔助觸控」(AssistiveTouch)後就能用滑鼠點擊、滑動、打字。
-- **網頁控制台**:同一個網路裡的任何電腦,打開瀏覽器就能即時看到手機畫面,並直接用滑鼠鍵盤操作。
-- **AI 助手**:給它一句話的任務,它會看著畫面一步一步操作手機。可以用 Google Gemini,或任何 OpenAI 相容、能看圖的模型。
+English | [繁體中文](README.zh-TW.md)
 
-靈感來自 [esp32-iphone-agent](https://github.com/onehumanbeing/esp32-iphone-agent)。
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/runs%20on-Linux%20(Raspberry%20Pi%20tested)-lightgrey)
+![iOS](https://img.shields.io/badge/iOS-18%2B-black)
+
+Ghosthand turns a small Linux computer (a Raspberry Pi is the tested one) into a remote hand for your iPhone:
+
+- **It sees the screen.** The iPhone mirrors its screen over AirPlay (the built-in *Screen Mirroring*).
+- **It taps, swipes and types.** The computer pretends to be a Bluetooth mouse and keyboard. With *AssistiveTouch* turned on, iOS accepts it like any mouse.
+- **You control it in a browser.** Open the web console from any computer on the same network and use your phone with your own mouse and keyboard.
+- **An AI assistant can drive it.** Give it a one-sentence task and it looks at the screen and operates the phone step by step, using Google Gemini or any OpenAI-compatible model that can read images.
+
+> Inspired by [esp32-iphone-agent](https://github.com/onehumanbeing/esp32-iphone-agent).
 
 ```
- iPhone ──螢幕鏡像 (Wi-Fi/AirPlay)──▶ 樹莓派 ──網頁 (MJPEG)──▶ 電腦瀏覽器
-   ▲                                    │  │
-   └────────藍牙滑鼠+鍵盤 (HID)──────────┘  └──截圖/動作──▶ 視覺模型(AI 助手)
+ iPhone ──screen mirroring (Wi-Fi / AirPlay)──▶ Ghosthand box ──web page (MJPEG)──▶ your browser
+   ▲                                                │   │
+   └──────── Bluetooth mouse + keyboard (HID) ──────┘   └── screenshots / actions ──▶ vision model (AI assistant)
 ```
 
-## 需要準備
+## What can you do with it?
 
-| 項目 | 說明 |
+- Control your phone from your computer with a real mouse and keyboard.
+- Let an AI do a chore for you, for example *"Open Settings, check the iOS version, then go back to the Home Screen"*.
+- Script your phone from the command line (see [Command-line tools](#command-line-tools)).
+- Demo your iPhone on a big screen without cables.
+
+## What you need
+
+| Item | Details |
 |---|---|
-| 樹莓派 | Raspberry Pi 5 或 4(要有內建 Wi-Fi 和藍牙),測試環境是 Pi 5 8GB |
-| 系統 | Raspberry Pi OS(Debian 12 bookworm 或 13 trixie) |
-| iPhone | iOS 18 以上,和樹莓派連**同一個 Wi-Fi** |
-| 螢幕(選用) | 樹莓派有接螢幕和桌面時,會同時全螢幕顯示手機畫面;沒有也可以 |
+| A Linux computer | **Tested on a Raspberry Pi 5 (8 GB) running Raspberry Pi OS** (Debian 12 or 13). A Pi 4 should work too. Other Debian/Ubuntu machines with Wi-Fi/Ethernet and Bluetooth *should* work, but haven't been tested. It must run `systemd` and BlueZ, so Windows and macOS are not supported. |
+| Bluetooth | A built-in or USB adapter that supports classic Bluetooth (BR/EDR). Most do. |
+| An iPhone | iOS 18 or later, on the **same network** as the Linux computer. Calibration values were measured on an iPhone 15 Pro Max. |
+| A screen (optional) | If the computer has a desktop and a monitor, it also shows the phone full-screen. It works without one. |
 
-## 安裝(在樹莓派上)
+## Quick start
+
+On the Linux computer:
 
 ```bash
 git clone https://github.com/orange0730/Ghosthand.git
@@ -32,184 +49,250 @@ cd Ghosthand
 ./install.sh
 ```
 
-安裝程式會:
+Then:
 
-1. 安裝 UxPlay(AirPlay 接收器)、GStreamer、藍牙和 Python 套件
-2. 建立 `.venv` 和設定檔 `config.env`
-3. 修改藍牙設定,讓樹莓派可以當成鍵盤和滑鼠:停用 bluetoothd 的 `input` 外掛,並把裝置類別設成「鍵盤+指標裝置」
-4. 建立並啟動三個開機自動執行的服務:
+1. **Set up the iPhone once** (about 3 minutes, see [One-time iPhone setup](#one-time-iphone-setup)): turn on AssistiveTouch, make the pointer yellow, pair the Bluetooth device.
+2. **Start mirroring**: on the iPhone open *Control Center → Screen Mirroring → Pi-Agent*.
+3. **Open the web console** in a browser at the address the installer printed, for example `http://192.168.1.127:8080`.
+4. When both lights at the top right turn green, click on the phone image to use it.
+5. *(Optional)* [Set up the AI assistant](#ai-assistant) to give it tasks in plain language.
 
-| 服務 | 用途 |
+> **Heads up:** the installer disables BlueZ's `input` plugin so the computer can act as a keyboard and mouse. After that, **the computer itself can no longer use Bluetooth keyboards or mice** (USB ones are fine). `./uninstall.sh` restores everything.
+
+### What the installer does
+
+1. Installs UxPlay (the AirPlay receiver), GStreamer, BlueZ and the Python packages.
+2. Creates a `.venv` and your settings file `config.env`.
+3. Changes the Bluetooth settings: disables the `input` plugin and sets the device class to "keyboard + pointing device".
+4. Creates and starts three services that run at boot:
+
+| Service | Purpose |
 |---|---|
-| `pi-iphone-hid` | 藍牙滑鼠+鍵盤(`hid_server.py`) |
-| `pi-iphone-mirror` | 接收 iPhone 畫面(`start_uxplay.sh`) |
-| `pi-iphone-web` | 網頁控制台(`web.py`,預設埠 8080) |
+| `pi-iphone-hid` | Bluetooth mouse and keyboard (`hid_server.py`, runs as root) |
+| `pi-iphone-mirror` | Receives the iPhone screen (`start_uxplay.sh`) |
+| `pi-iphone-web` | Web console (`web.py`, port 8080 by default) |
 
-完成後會顯示網頁控制台的網址,例如 `http://192.168.1.127:8080`。
+It is safe to run `./install.sh` again, for example after updating the project with `git pull`.
 
-> 注意:停用藍牙的 `input` 外掛後,**樹莓派本身就不能再接藍牙鍵盤和滑鼠**(USB 的不受影響)。執行 `./uninstall.sh` 可以還原。
+## One-time iPhone setup
 
-## iPhone 一次性設定
+You only do this once.
 
-這些只需要設定一次。
+1. **AssistiveTouch**: Settings → Accessibility → Touch → AssistiveTouch → on.
+2. **Pointer style**: Settings → Accessibility → Pointer Control:
+   - **Color: Yellow**
+   - **Border width: the thickest**
+   - **Auto-Hide Pointer: off**
 
-1. **輔助觸控**:設定 → 輔助使用 → 觸控 → 輔助觸控 → 開啟。
-2. **指標樣式**:設定 → 輔助使用 → 指標控制:
-   - **顏色:黃色**
-   - **邊框寬度:調到最粗**
-   - **自動隱藏指標:關閉**
+   Ghosthand finds the pointer by its **yellow ring** in the mirrored picture, so this step is required.
+3. **Pair Bluetooth**: Settings → Bluetooth → under *Other Devices* tap **Pi-Agent HID**. No passcode is needed.
+4. **Auto-Lock**: set it to a long time or *Never* (Settings → Display & Brightness → Auto-Lock). Mirroring stops as soon as the iPhone locks.
+5. **Typing**: a hardware keyboard only types English letters and digits. If you see Chinese phonetic symbols instead, press **Switch input** in the console (Ctrl+Space).
 
-   程式是靠畫面上的**黃色圓環**找到游標位置的,這一步一定要做。
-3. **藍牙配對**:設定 → 藍牙 → 在「其他裝置」點「**Pi-Agent HID**」。配對不用輸入密碼。
-4. **自動鎖定**:建議改成較長時間或「永不」(設定 → 螢幕顯示與亮度 → 自動鎖定)。iPhone 一鎖定,螢幕鏡像就會停止。
-5. **鍵盤**(要用打字功能時):實體鍵盤只能打英數。如果打出來的是注音符號,在控制台按「切換輸入法」(Ctrl+Space)。
+## Everyday use
 
-## 每次使用
+1. On the iPhone: **Control Center → Screen Mirroring → Pi-Agent**.
+2. In a browser, open the console address from the installer.
+3. When both lights at the top right are green, you can start. The Bluetooth light often shows "not connected" while idle. That is fine, it reconnects by itself on the first action.
 
-1. iPhone 打開**控制中心** → **螢幕鏡像輸出** → 選「**Pi-Agent**」。
-2. 電腦打開瀏覽器,進入安裝完成時顯示的網址。
-3. 畫面右上角兩個燈都變綠色就可以開始操作。藍牙平常顯示「未連線」也沒關係,第一次操作時會自動重新連上。
+When you are done, stop mirroring from the iPhone's Control Center.
 
-用完後,在 iPhone 的控制中心按「停止鏡像輸出」即可。
+## Using the web console
 
-## 網頁控制台操作教學
-
-| 在手機畫面上 | 對 iPhone 的效果 |
+| On the phone picture | What the iPhone does |
 |---|---|
-| 點一下 | 點擊 |
-| 按住不放(0.6 秒以上) | 長按 |
-| 拖曳 | 手指滑動(往上拖 = 內容往下捲,和手機上一樣) |
-| Shift + 點一下 | 點兩下 |
-| 滑鼠滾輪 | 捲動 |
-| 點一下畫面後直接打字 | 輸入英數字;Enter、Backspace、Esc、方向鍵也都可用 |
-| Ctrl(或 ⌘)+ 字母 | iPhone 的 ⌘ 快捷鍵,例如 Ctrl+A 全選、Ctrl+C 複製 |
+| Click | Tap |
+| Press and hold (0.6 s or more) | Long press |
+| Drag | Swipe (drag up = content scrolls down, like on a phone) |
+| Shift + click | Double tap |
+| Mouse wheel | Scroll |
+| Click the picture, then type | Types letters and digits. Enter, Backspace, Esc and arrow keys work too |
+| Ctrl (or ⌘) + a letter | iPhone ⌘ shortcuts, for example Ctrl+A select all, Ctrl+C copy |
 
-右邊面板:
+The right-hand panel has:
 
-- **快捷鍵**:回主畫面、Spotlight 搜尋、Enter、刪除、Esc、切換輸入法。
-- **輸入文字**:一次送出一段英數文字。
-- **AI 助手**:輸入任務後按「開始」,下方會即時顯示它看到什麼、打算做什麼。隨時可以按「停止」。
+- **Shortcuts**: Home, Spotlight search, Enter, Delete, Esc, Switch input.
+- **Type text**: send a whole piece of English/number text at once.
+- **AI assistant**: type a task and press *Start*. It shows live what it sees and what it plans to do. Press *Stop* at any time.
 
-**每個點擊大約需要 1~3 秒**:iPhone 的滑鼠游標只能「相對移動」,而且有加速度。程式會一邊移動、一邊看畫面上的黃色圓環,把游標修正到正確位置後才按下。誤差大約 0.5 點。
+**Each tap takes about 1 to 3 seconds.** An iPhone mouse pointer can only move *relatively* and it accelerates. So Ghosthand moves a bit, looks at the yellow ring in the picture, corrects, and only then clicks. The error is about half a point.
 
-## AI 助手
+## AI assistant
 
-### 設定 Gemini 金鑰
+### Set up a Gemini key
 
-1. 用你的 Google 帳號到 <https://aistudio.google.com/apikey> 建立 API 金鑰。免費額度有每日次數限制;Google AI Pro 訂閱本身不包含 API 用量。
-2. 在樹莓派上編輯設定檔,填入金鑰:
+1. Create an API key at <https://aistudio.google.com/apikey> with your Google account. The free tier has a daily limit. A Google AI Pro subscription does not include API usage.
+2. Put the key into the settings file on the Linux computer:
 
    ```bash
    nano ~/Ghosthand/config.env
-   # AGENT_API_KEY=你的金鑰
+   # AGENT_API_KEY=your-key
    ```
 
-3. 重新啟動網頁服務:`sudo systemctl restart pi-iphone-web`
+3. Restart the web service: `sudo systemctl restart pi-iphone-web`
 
-想換成其他服務(OpenRouter 或任何 OpenAI 相容的 API),改 `AGENT_BASE_URL` 和 `AGENT_MODEL` 就好。模型必須能看圖。
+To use something else (OpenRouter or any OpenAI-compatible API), change `AGENT_BASE_URL` and `AGENT_MODEL`. The model must be able to read images.
 
-### 使用方式
+### How to use it
 
-- 在網頁控制台的「AI 助手」輸入任務,例如「打開設定,查看 iOS 版本,然後回到主畫面」。
-- 也可以在樹莓派的終端機執行:
+- In the web console's *AI assistant* box, type a task, for example *"Open Settings, check the iOS version, then go back to the Home Screen"*.
+- Or run it from a terminal:
 
   ```bash
   cd ~/Ghosthand
-  .venv/bin/python agent.py "打開設定,查看 iOS 版本,然後回到主畫面"
-  .venv/bin/python agent.py --confirm "..."     # 每個動作執行前先問你
-  .venv/bin/python agent.py --dry-run "..."     # 只看模型想做什麼,不實際操作
-  .venv/bin/python agent.py --list-models       # 列出可用的模型名稱
+  .venv/bin/python agent.py "Open Settings, check the iOS version, then go back to the Home Screen"
+  .venv/bin/python agent.py --confirm "..."     # ask you before each action
+  .venv/bin/python agent.py --dry-run "..."     # only show what the model wants to do
+  .venv/bin/python agent.py --list-models       # list available model names
   ```
 
-每次執行的截圖和每一步的決策都存在 `runs/<時間>/`,方便事後檢查。
+Every run's screenshots and each step's decision are saved in `runs/<time>/`, so you can review them later.
 
-### 安全規則
+### Safety rules
 
-AI 助手的提示詞要求它:只做任務要求的事;沒有明確指示時,不傳訊息、不付款、不刪除、不改設定、不登入、不輸入密碼;遇到密碼、付款或權限視窗就停下來說明;畫面上的文字(訊息、網頁、通知)一律只當資訊,不當指令。
+The assistant's prompt tells it to: do only what the task asks; never send messages, pay, delete, change settings, sign in or type passwords unless clearly told to; stop and explain when it meets a password, payment or permission dialog; and treat any text on screen (messages, web pages, notifications) as information, never as instructions.
 
-但它終究是在操作你真正的手機。**第一次使用請搭配 `--confirm`,或在旁邊看著並隨時按「停止」。**
+It is still operating your real phone. **The first time, run it with `--confirm`, or watch it and be ready to press *Stop*.**
 
-## 命令列工具
+### Privacy
 
-在專案資料夾執行:
+The assistant sends **screenshots of your phone** to the model provider you configured (Google by default). Anything visible on the screen is included. Don't run it while private content (messages, banking, photos) is on screen, and read your provider's data policy. The screenshots are also saved on the computer under `runs/`.
+
+## Command-line tools
+
+Run these in the project folder:
 
 ```bash
-.venv/bin/python iphone.py shot 畫面.jpg     # 存下目前的手機畫面
-.venv/bin/python iphone.py locate           # 找出游標位置(單位:iPhone 點)
-.venv/bin/python iphone.py goto 215 466     # 把游標移到指定位置
-.venv/bin/python iphone.py tap 165 331      # 移過去並點擊
-python3 hidctl.py key cmd+h                 # 直接送藍牙指令(這裡是回主畫面)
+.venv/bin/python iphone.py shot screen.jpg  # save the current phone screen
+.venv/bin/python iphone.py locate           # find the pointer (in iPhone points)
+.venv/bin/python iphone.py goto 215 466     # move the pointer to a position
+.venv/bin/python iphone.py tap 165 331      # move there and tap
+python3 hidctl.py key cmd+h                 # send a raw Bluetooth command (here: Home)
 ```
 
-## 校正
+## Calibration
 
-`calibration.json` 記錄「送出的滑鼠移動量」對應「iPhone 上移動幾點」。iOS 會依移動速度加速,所以每種移動量各有一個比例。
+`calibration.json` records how many iPhone points the pointer moves for each size of mouse movement we send. iOS accelerates the pointer with speed, so every movement size has its own ratio.
 
-內建的數值是在 iPhone 15 Pro Max、追蹤速度預設值下量出來的。換了手機,或改過「輔助觸控 → 追蹤速度」時,請重新校正:回到主畫面,找一塊周圍約 60 點都沒有圖示的空白處,例如 (215, 466),然後執行:
+The built-in values were measured on an iPhone 15 Pro Max with the default tracking speed. If you use another phone, or changed *AssistiveTouch → Tracking Speed*, calibrate again: go to the Home Screen, find an empty spot with no icons within about 60 points, for example (215, 466), and run:
 
 ```bash
 .venv/bin/python iphone.py calibrate 215 466
 ```
 
-### 不同 iPhone 的尺寸
+### Other iPhone sizes
 
-在 `config.env` 設定 `IPHONE_POINTS`,然後重啟服務:
+Set `IPHONE_POINTS` in `config.env`, then restart the services:
 
-| 機型 | IPHONE_POINTS |
+| Model | IPHONE_POINTS |
 |---|---|
 | iPhone 16 Pro Max | 440x956 |
 | iPhone 16 Pro | 402x874 |
-| iPhone 15 Pro Max、15 Plus、16 Plus、14 Pro Max | 430x932 |
-| iPhone 15、15 Pro、16、14 Pro | 393x852 |
-| iPhone 14、13、13 Pro、12、12 Pro | 390x844 |
+| iPhone 15 Pro Max, 15 Plus, 16 Plus, 14 Pro Max | 430x932 |
+| iPhone 15, 15 Pro, 16, 14 Pro | 393x852 |
+| iPhone 14, 13, 13 Pro, 12, 12 Pro | 390x844 |
 
-## 服務管理
+## Settings (`config.env`)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `IPHONE_POINTS` | `430x932` | Screen size of your iPhone in points (portrait) |
+| `MIRROR_NAME` | `Pi-Agent` | Name shown in the iPhone's Screen Mirroring list |
+| `BT_NAME` | `Pi-Agent HID` | Name shown in the iPhone's Bluetooth list |
+| `WEB_PORT` | `8080` | Port of the web console |
+| `WEB_PASSWORD` | *(empty)* | Password for the web console. Empty means no password |
+| `AGENT_BASE_URL` | Gemini's OpenAI-compatible URL | API of the AI assistant |
+| `AGENT_MODEL` | `gemini-flash-latest` | Model name (must accept images) |
+| `AGENT_API_KEY` | *(empty)* | Your API key |
+
+After changing it: `sudo systemctl restart pi-iphone-hid pi-iphone-mirror pi-iphone-web`
+
+## Managing the services
 
 ```bash
-systemctl status pi-iphone-hid pi-iphone-mirror pi-iphone-web   # 狀態
-sudo systemctl restart pi-iphone-web                            # 重新啟動某個服務
-journalctl -u pi-iphone-mirror -f                               # 即時看日誌
+systemctl status pi-iphone-hid pi-iphone-mirror pi-iphone-web   # status
+sudo systemctl restart pi-iphone-web                            # restart one service
+journalctl -u pi-iphone-mirror -f                               # follow the log
 ```
 
-## 疑難排解
+## Troubleshooting
 
-| 狀況 | 處理方式 |
+| Problem | What to do |
 |---|---|
-| 螢幕鏡像清單找不到 Pi-Agent | iPhone 和樹莓派要在同一個 Wi-Fi;`systemctl status pi-iphone-mirror` 確認服務在跑 |
-| 網頁顯示「未鏡像」 | iPhone 可能自動鎖定了,解鎖後重新選擇螢幕鏡像 |
-| 藍牙一直未連線 | 在 iPhone 的藍牙設定點「Pi-Agent HID」重新連線;仍然不行就「忘記此裝置」後重新配對 |
-| 點了沒反應,出現「pointer not found」 | 確認輔助觸控已開啟,指標是**黃色**、**自動隱藏已關閉** |
-| 點擊位置偏掉 | 確認 `IPHONE_POINTS` 符合你的機型,然後重新校正 |
-| 打字打出注音符號 | 按「切換輸入法」(Ctrl+Space),刪掉錯字後重打 |
-| 畫面延遲或卡住不動 | `sudo systemctl restart pi-iphone-mirror`,然後在 iPhone 重新選擇螢幕鏡像 |
-| AI 助手說沒有金鑰 | 在 `config.env` 填 `AGENT_API_KEY`,然後 `sudo systemctl restart pi-iphone-web` |
+| "Pi-Agent" is not in the Screen Mirroring list | The iPhone and the computer must be on the same Wi-Fi/network. Run `systemctl status pi-iphone-mirror` to check the service |
+| The console says "not mirroring" | The iPhone probably locked. Unlock it and choose Screen Mirroring again |
+| Bluetooth stays "not connected" | In the iPhone's Bluetooth settings tap "Pi-Agent HID" to reconnect. If that fails, "Forget This Device" and pair again |
+| Taps do nothing, "pointer not found" appears | Make sure AssistiveTouch is on, the pointer is **yellow**, and auto-hide is **off** |
+| Taps land in the wrong place | Check that `IPHONE_POINTS` matches your model, then calibrate again |
+| Typing produces phonetic symbols | Press *Switch input* (Ctrl+Space), delete the wrong characters and type again |
+| The picture lags or freezes | `sudo systemctl restart pi-iphone-mirror`, then choose Screen Mirroring on the iPhone again |
+| The AI assistant says there is no key | Fill in `AGENT_API_KEY` in `config.env`, then `sudo systemctl restart pi-iphone-web` |
 
-## 已知限制
+## Known limitations
 
-- iOS 不會鏡像密碼輸入畫面、Apple Pay 和有版權保護的影片,在這些畫面上看到的是黑畫面。
-- iPhone 鎖定後鏡像就會停止,必須在手機上重新開啟。
-- 只能輸入英數字元(實體鍵盤的限制)。中文需要在手機上切換到注音後,點選畫面上的鍵盤。
-- 不支援橫向畫面的 App。
-- 滑鼠是相對移動的,每次點擊需要 1~3 秒。
+- iOS does not mirror password entry screens, Apple Pay or copy-protected video. They appear black.
+- Mirroring stops when the iPhone locks, and has to be started again on the phone.
+- Only English letters and digits can be typed from the keyboard. For Chinese, switch the phone to the phonetic keyboard and tap its on-screen keys.
+- Apps in landscape orientation are not supported.
+- The pointer moves relatively, so every tap takes 1 to 3 seconds.
 
-## 安全性
+## Security
 
-- 網頁控制台預設**沒有密碼**,同一個網路裡的任何人都能操作你的手機。在不信任的網路上,請在 `config.env` 設定 `WEB_PASSWORD`。設定後瀏覽器會要求輸入,帳號隨意填。
-- `config.env` 裡有 API 金鑰,已列在 `.gitignore`,不會被提交到 Git。
+- The web console has **no password by default**, so anyone on the same network can control your phone. On a network you don't fully trust, set `WEB_PASSWORD` in `config.env`. The browser will then ask for it (any user name works). The console uses plain HTTP, so don't expose it to the internet.
+- `hid_server.py` runs as root (it needs raw Bluetooth access) and is reachable only through a local socket (`/run/pi-hid.sock`). Any user account on that machine can send commands to it, so don't give untrusted people a login.
+- `config.env` holds your API key. It is listed in `.gitignore`, so it won't be committed. Don't share it.
+- Read the [Privacy](#privacy) section before using the AI assistant.
 
-## 檔案說明
+## Uninstall
 
-| 檔案 | 用途 |
+```bash
+./uninstall.sh
+```
+
+This removes the services and restores the Bluetooth settings. The project folder, `config.env` and `runs/` stay, so delete the folder yourself if you no longer want them. On the iPhone you can also "Forget This Device" for "Pi-Agent HID".
+
+## FAQ
+
+**Do I need to jailbreak the iPhone, or install an app on it?**
+No. It only uses features that are built into iOS: Screen Mirroring and AssistiveTouch.
+
+**Do I need a Raspberry Pi?**
+No, but it is the only tested setup. It is small, cheap, and has Wi-Fi and Bluetooth built in. Any Debian/Ubuntu computer with Bluetooth should work in theory. If you try one, please open an issue and tell us how it went.
+
+**Does it work with Android?**
+No. It relies on iPhone-specific features (AirPlay mirroring and AssistiveTouch pointer support).
+
+**Why is the pointer yellow?**
+The program locates the pointer by detecting the yellow ring in the mirrored picture, then moves it with closed-loop corrections until it is on the target.
+
+**Is it fast?**
+Not very. A tap takes 1 to 3 seconds, and the AI assistant takes a few seconds per step because it waits for the model.
+
+## Project files
+
+| File | Purpose |
 |---|---|
-| `hid_server.py` | 藍牙 HID 鍵盤+滑鼠伺服器(root 執行),透過 `/run/pi-hid.sock` 接收指令 |
-| `start_uxplay.sh` | 啟動 UxPlay,把畫面存成 JPEG 到 `/dev/shm/iphone/` |
-| `iphone.py` | 找黃色游標、閉迴路移動、點擊、滑動、校正 |
-| `agent.py` | AI 助手(OpenAI 相容 API) |
-| `web.py`、`static/index.html` | 網頁控制台 |
-| `config.py`、`config.env.example` | 設定 |
-| `hidctl.py` | 送單一藍牙指令的小工具 |
-| `install.sh`、`uninstall.sh` | 安裝與移除 |
+| `hid_server.py` | Bluetooth HID keyboard and mouse server (runs as root), takes commands over `/run/pi-hid.sock` |
+| `start_uxplay.sh` | Starts UxPlay and saves frames as JPEGs in `/dev/shm/iphone/` |
+| `iphone.py` | Pointer detection, closed-loop movement, tap, swipe, calibration |
+| `agent.py` | The AI assistant (OpenAI-compatible API) |
+| `web.py`, `static/index.html` | The web console |
+| `config.py`, `config.env.example` | Settings |
+| `hidctl.py` | Small tool to send a single Bluetooth command |
+| `calibration.json` | Pointer calibration values |
+| `install.sh`, `uninstall.sh` | Install and remove |
 
-## Star 走勢
+## Credits
+
+- [UxPlay](https://github.com/FDH2/UxPlay) receives the AirPlay screen.
+- [esp32-iphone-agent](https://github.com/onehumanbeing/esp32-iphone-agent) inspired this project.
+
+## License
+
+[MIT](LICENSE)
+
+Ghosthand is an independent project and is not affiliated with or endorsed by Apple Inc. iPhone, AirPlay and AssistiveTouch are trademarks of Apple Inc. Use it only on devices you own or have permission to control.
+
+## Star history
 
 [![Star History Chart](https://api.star-history.com/svg?repos=orange0730/Ghosthand&type=Date)](https://star-history.com/#orange0730/Ghosthand&Date)

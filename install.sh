@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Ghosthand on a Raspberry Pi (Raspberry Pi OS / Debian 12 or 13).
+# Install Ghosthand on a Debian-based Linux computer (tested on a Raspberry Pi 5 with Raspberry Pi OS, Debian 12 or 13).
 # Run it as your normal user from the project folder: ./install.sh
 # It is safe to run again, e.g. after pulling a new version.
 set -euo pipefail
@@ -34,7 +34,7 @@ fi
 chmod 600 "$DIR/config.env"
 chmod +x "$DIR"/*.sh "$DIR"/*.py
 
-step "藍牙:讓樹莓派可以當成 iPhone 的鍵盤和滑鼠"
+step "藍牙:讓這台電腦可以當成 iPhone 的鍵盤和滑鼠"
 # bluetoothd's own input plugin would hold the HID channels (L2CAP PSM 17/19).
 BLUETOOTHD=$(systemctl cat bluetooth | sed -n 's/^ExecStart=\(\/[^ ]*bluetoothd\).*/\1/p' | head -1)
 sudo mkdir -p /etc/systemd/system/bluetooth.service.d
