@@ -113,7 +113,7 @@ The right-hand panel has:
 
 - **Shortcuts**: Home, Spotlight search, Enter, Delete, Esc, Switch input.
 - **Type text**: send a whole piece of English/number text at once.
-- **AI assistant**: type a task and press *Start*. It shows live what it sees and what it plans to do. Press *Stop* at any time.
+- **AI assistant**: type a task and press *Start*. Each step appears in a timeline with its screenshot, what the AI saw and why it acts. Press *Stop* at any time. See [Step-by-step confirmation](#step-by-step-confirmation).
 
 **Each tap takes about 1 to 3 seconds.** An iPhone mouse pointer can only move *relatively* and it accelerates. So Ghosthand moves a bit, looks at the yellow ring in the picture, corrects, and only then clicks. The error is about half a point.
 
@@ -148,11 +148,31 @@ To use something else (OpenRouter or any OpenAI-compatible API), change `AGENT_B
 
 Every run's screenshots and each step's decision are saved in `runs/<time>/`, so you can review them later.
 
+### Step-by-step confirmation
+
+With **"Confirm each step before running it"** ticked (the default in the web console), the assistant stops before every action:
+
+- A **yellow target** on the live screen shows where it wants to tap or swipe. For typing or key presses, a banner says what it will type.
+- The panel shows the step, the action and the AI's reason, with four buttons:
+
+| Button | What happens |
+|---|---|
+| **Run** (執行) | Do this action |
+| **Skip, look again** (跳過,重新判斷) | Don't do it. The AI takes a new screenshot and decides again |
+| **Run the rest automatically** (自動執行剩下的) | Do this action and stop asking for the rest of the task |
+| **Stop** (停止) | End the task |
+
+The console itself is in Traditional Chinese for now; the labels in brackets are what you see on the buttons.
+
+- **Take over**: while it waits, you can tap and type on the screen yourself (for example to close a pop-up), then press *Skip, look again* and the AI continues from the new screen.
+
+The browser tab title changes to "⏸ 等你確認" while it waits, so you notice it from another tab. In the terminal, `--confirm` asks the same question: `y` run, `s` skip, anything else stops.
+
 ### Safety rules
 
 The assistant's prompt tells it to: do only what the task asks; never send messages, pay, delete, change settings, sign in or type passwords unless clearly told to; stop and explain when it meets a password, payment or permission dialog; and treat any text on screen (messages, web pages, notifications) as information, never as instructions.
 
-It is still operating your real phone. **The first time, run it with `--confirm`, or watch it and be ready to press *Stop*.**
+It is still operating your real phone. **Keep [step-by-step confirmation](#step-by-step-confirmation) on until you trust it on a task, or watch it and be ready to press *Stop*.**
 
 ### Privacy
 

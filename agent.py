@@ -5,7 +5,7 @@ Works with any OpenAI-compatible chat API that accepts images (default: Google G
 The web console runs it too; from the command line:
 
   .venv/bin/python agent.py "打開設定,查看 iOS 版本,然後回到主畫面"
-  .venv/bin/python agent.py --confirm "..."    ask before every action on the phone
+  .venv/bin/python agent.py --confirm "..."    ask before every action: run, skip or stop
   .venv/bin/python agent.py --dry-run "..."    ask the model once, print its action, do nothing
   .venv/bin/python agent.py --list-models      models the endpoint offers
 
@@ -85,12 +85,17 @@ def make_client():
 
 class Agent:
     def __init__(self, client, model, phone=None, log=print, should_stop=None,
-                 confirm=None, dry_run=False, max_steps=30):
-        """`confirm(action) -> bool` is asked before each action; `should_stop()` is polled."""
+                 confirm=None, dry_run=False, max_steps=30, on_event=None):
+        """`confirm(action)` is asked before each action and answers True (run it), "skip"
+        (don't run it, look at the screen again) or False (stop). `should_stop()` is polled.
+        `on_event(dict)` hears about the run: {"kind": "start", "run_dir"}, then per step
+        {"kind": "step", "step", "shot", "observation", "thought", "action"} and
+        {"kind": "result", "step", "result"}."""
         self.client, self.model = client, model
         self.phone = phone or Phone()
         self.log, self.should_stop = log, should_stop or (lambda: False)
         self.confirm, self.dry_run, self.max_steps = confirm, dry_run, max_steps
+        self.on_event = on_event or (lambda event: None)
         self.history = []  # one line per step, shown to the model
 
     def screenshot(self, step):
@@ -126,6 +131,7 @@ class Agent:
         with open(os.path.join(self.run_dir, "steps.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"step": step, "time": time.time(), "reply": reply, "result": result,
                                 "raw": raw}, ensure_ascii=False) + "\n")
+        self.on_event({"kind": "result", "step": step, "result": result})
 
     def run(self, task):
         """Work on `task` until done; returns the final action (done or stop)."""
@@ -133,6 +139,7 @@ class Agent:
         os.makedirs(self.run_dir)
         with open(os.path.join(self.run_dir, "task.txt"), "w", encoding="utf-8") as f:
             f.write(f"{self.model}\n{task}\n")
+        self.on_event({"kind": "start", "run_dir": self.run_dir})
         self.log(f"模型 {self.model},紀錄在 {self.run_dir}")
         for step in range(1, self.max_steps + 1):
             if self.should_stop():
@@ -141,6 +148,8 @@ class Agent:
             time.sleep(0.8)  # let the previous action's animation settle in the mirror
             reply, raw = self.ask(task, self.screenshot(step))
             action = reply["action"]
+            self.on_event({"kind": "step", "step": step, "shot": f"{step:03d}.jpg", "action": action,
+                           "observation": reply.get("observation", ""), "thought": reply.get("thought", "")})
             self.log(f"[{step}] {reply.get('observation', '')}\n    → {reply.get('thought', '')}\n"
                      f"    {json.dumps(action, ensure_ascii=False)}")
             if action["type"] in ("done", "stop"):
@@ -151,7 +160,14 @@ class Agent:
                 self.record(step, reply, "dry run", raw)
                 self.log("試跑模式:沒有執行")
                 return action
-            if self.should_stop() or (self.confirm and not self.confirm(action)):
+            verdict = False if self.should_stop() else self.confirm(action) if self.confirm else True
+            if verdict == "skip":
+                self.record(step, reply, "skipped", raw)
+                self.log("    已跳過,重新看畫面")
+                self.history.append(f"{step}. proposed {json.dumps(action, ensure_ascii=False)} -> the owner "
+                                    "skipped it and may have operated the phone by hand; look at the screen again")
+                continue
+            if not verdict:
                 self.record(step, reply, "declined", raw)
                 self.log("已停止:動作未執行")
                 return {"type": "stop", "reason": "declined"}
@@ -187,7 +203,11 @@ def main():
         return
     if not args.task:
         ap.error("give a task")
-    confirm = (lambda a: input("    執行? [y/N] ").strip().lower() == "y") if args.confirm else None
+    def confirm(action):
+        answer = input("    執行? [y 執行 / s 跳過 / N 停止] ").strip().lower()
+        return True if answer == "y" else "skip" if answer == "s" else False
+
+    confirm = confirm if args.confirm else None
     Agent(client, model, confirm=confirm, dry_run=args.dry_run, max_steps=args.max_steps).run(args.task)
 
 

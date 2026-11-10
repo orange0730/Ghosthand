@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>iPhone 遠端控制</title>
+<title>Ghosthand</title>
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --text: #1d1f23; --muted: #6b7079; --line: #e2e4e8;
@@ -67,6 +67,55 @@
            background: var(--bad); color: #fff; padding: 9px 14px; border-radius: 8px; font-size: 14px;
            opacity: 0; transition: opacity .2s; pointer-events: none; }
   #toast.show { opacity: 1; }
+
+  /* ---- AI assistant: where it wants to act, its decision panel and timeline ---- */
+  #target { position: absolute; inset: 0; pointer-events: none; }
+  #target svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .aim { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+         border: 3px solid var(--warn); box-shadow: 0 0 0 3px rgba(0,0,0,.45), inset 0 0 0 2px rgba(0,0,0,.35); }
+  .aim::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
+                margin: -3px 0 0 -3px; border-radius: 50%; background: var(--warn); }
+  .aim.wait { animation: pulse 1.2s ease-in-out infinite; }
+  .aim.end { width: 30px; height: 30px; margin: -15px 0 0 -15px; background: var(--warn); }
+  .aim.end::after { display: none; }
+  @keyframes pulse { 50% { transform: scale(1.25); } }
+  .aim-label { position: absolute; transform: translate(-50%, 30px); white-space: nowrap; line-height: 1.3;
+               background: var(--warn); color: #111; font-size: 13px; font-weight: 600;
+               padding: 3px 8px; border-radius: 6px; }
+  .aim-banner { position: absolute; left: 12px; right: 12px; top: 12px; line-height: 1.4; text-align: center;
+                background: var(--warn); color: #111; font-size: 14px; font-weight: 600;
+                padding: 8px 10px; border-radius: 8px; overflow-wrap: anywhere; }
+  label.check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; cursor: pointer; }
+  label.check input { width: auto; margin: 0; }
+  #pending { margin-top: 12px; padding: 12px; border-radius: 10px; border: 2px solid var(--warn);
+             background: color-mix(in srgb, var(--warn) 10%, var(--panel)); }
+  #pending[hidden], #final[hidden] { display: none; }
+  #pending .what { font-size: 16px; font-weight: 700; margin: 2px 0 4px; overflow-wrap: anywhere; }
+  button.danger { color: var(--bad); }
+  button.danger:hover { border-color: var(--bad); }
+  #timeline { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px;
+              max-height: 420px; overflow: auto; }
+  #timeline:empty { display: none; }
+  .step { display: flex; gap: 10px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; }
+  .step.now { border-color: var(--warn); }
+  .thumb { position: relative; flex: none; width: 64px; border-radius: 8px; overflow: hidden;
+           background: var(--screen-bg); align-self: flex-start; line-height: 0; }
+  .thumb img { width: 100%; display: block; }
+  .thumb .dot-aim { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+                    border: 2px solid var(--warn); box-shadow: 0 0 0 1px #000; }
+  .step .body { min-width: 0; flex: 1; font-size: 13px; }
+  .step .head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+  .step .act { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+  .step .obs, .step .why { color: var(--muted); overflow-wrap: anywhere; }
+  .badge { font-size: 12px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.warn { color: var(--warn); border-color: var(--warn); }
+  .badge.bad { color: var(--bad); border-color: var(--bad); }
+  #final { margin-top: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+           font-size: 14px; overflow-wrap: anywhere; }
+  #final.ok { border-color: var(--ok); } #final.bad { border-color: var(--bad); }
+  details.raw { margin-top: 10px; }
+  details.raw summary { font-weight: normal; font-size: 13px; color: var(--muted); }
   @media (max-width: 760px) {
     main { flex-direction: column; align-items: stretch; }
     .phone { align-self: center; }
@@ -77,7 +126,7 @@
 </head>
 <body>
 <header>
-  <h1>iPhone 遠端控制</h1>
+  <h1>Ghosthand</h1>
   <span class="pill"><span id="mirrorDot" class="dot"></span><span id="mirrorText">鏡像</span></span>
   <span class="pill"><span id="btDot" class="dot"></span><span id="btText">藍牙</span></span>
 </header>
@@ -85,6 +134,7 @@
   <section class="phone">
     <div id="screen" tabindex="0" aria-label="iPhone 畫面,點選後可用鍵盤輸入">
       <img id="img" alt="iPhone 畫面" draggable="false">
+      <div id="target" aria-live="polite"></div>
       <div id="overlay">正在連線…</div>
     </div>
     <div id="busy"></div>
@@ -112,12 +162,27 @@
     <div class="card">
       <h2>AI 助手</h2>
       <textarea id="task" placeholder="例如:打開設定,查看 iOS 版本,然後回到主畫面"></textarea>
+      <label class="check"><input type="checkbox" id="confirmEach" checked> 每一步先讓我確認再執行</label>
       <div class="row" style="margin-top:8px">
         <button id="agentStart" class="primary">開始</button>
-        <button id="agentStop">停止</button>
+        <button id="agentStop" class="danger">停止</button>
       </div>
-      <p class="hint">AI 會看畫面一步一步操作手機;執行時手動操作會暫停。需要先在 config.env 設定 AGENT_API_KEY。</p>
-      <pre id="log"></pre>
+      <p class="hint">AI 會看畫面一步一步操作手機。需要先在 config.env 設定 AGENT_API_KEY。</p>
+      <div id="pending" hidden>
+        <div class="hint" id="pendingStep"></div>
+        <div class="what" id="pendingWhat"></div>
+        <div class="hint" id="pendingWhy"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="decideRun" class="primary">執行</button>
+          <button id="decideSkip">跳過,重新判斷</button>
+          <button id="decideAll">自動執行剩下的</button>
+          <button id="decideStop" class="danger">停止</button>
+        </div>
+        <p class="hint">左邊畫面上的黃色圓圈就是 AI 想點的位置。你也可以先在畫面上自己操作(接手),做完按「跳過,重新判斷」,AI 會重新看畫面。</p>
+      </div>
+      <ol id="timeline"></ol>
+      <div id="final" hidden></div>
+      <details class="raw"><summary>詳細紀錄</summary><pre id="log"></pre></details>
     </div>
     <div class="card">
       <details>
@@ -139,6 +204,7 @@
 <div id="toast"></div>
 <script>
 const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const screen = $('screen'), img = $('img');
 
 // ---- talking to the Pi ---------------------------------------------------
@@ -269,8 +335,158 @@ $('sendText').addEventListener('click', sendText);
 $('text').addEventListener('keydown', e => { if (e.key === 'Enter') sendText(); });
 
 $('agentStart').addEventListener('click', () =>
-  post('/api/agent/start', { task: $('task').value }).then(refresh).catch(err => toast(err.message)));
-$('agentStop').addEventListener('click', () => post('/api/agent/stop').catch(err => toast(err.message)));
+  post('/api/agent/start', { task: $('task').value, confirm_each: $('confirmEach').checked })
+    .then(refresh).catch(err => toast(err.message)));
+$('agentStop').addEventListener('click', () => post('/api/agent/stop').then(refresh).catch(err => toast(err.message)));
+for (const [id, decision] of [['decideRun', 'run'], ['decideSkip', 'skip'], ['decideAll', 'run_all'], ['decideStop', 'stop']]) {
+  $(id).addEventListener('click', () => {
+    $('pending').hidden = true;  // answered; the next status shows what comes next
+    post('/api/agent/decide', { decision }).then(refresh).catch(err => toast(err.message));
+  });
+}
+
+// ---- AI assistant: timeline and where it wants to act ---------------------
+// Everything the model wrote is shown with textContent, never as HTML.
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function describe(a) {
+  switch (a.type) {
+    case 'tap': return '點擊';
+    case 'double_tap': return '點兩下';
+    case 'long_press': return `長按 ${a.seconds || 1} 秒`;
+    case 'swipe': return '滑動';
+    case 'type': return `輸入「${a.text || ''}」`;
+    case 'key': return `按下 ${a.keys || ''}`;
+    case 'home': return '回到主畫面';
+    case 'wait': return `等待 ${a.seconds || 1} 秒`;
+    case 'done': return '完成任務';
+    case 'stop': return '停下來';
+    default: return a.type;
+  }
+}
+const RESULTS = { ok: ['ok', '已執行'], finished: ['ok', '結束'], skipped: ['', '已跳過'],
+                  declined: ['bad', '已停止'], 'dry run': ['', '試跑'] };
+function badge(step, agent) {
+  if (step.result === null) {
+    if (agent.pending === step.step) return ['warn', '等你確認'];
+    return agent.running ? ['warn', '執行中'] : ['', '未執行'];
+  }
+  if (RESULTS[step.result]) return RESULTS[step.result];
+  return ['bad', '失敗'];
+}
+const clamp = v => Math.min(Math.max(Number(v) || 0, 0), 1000) / 10 + '%';
+
+// The yellow target on the live screen: the step waiting for a decision, or the one running.
+function drawTarget(agent) {
+  const layer = $('target');
+  layer.textContent = '';
+  const last = agent.steps[agent.steps.length - 1];
+  if (!agent.running || !last || last.result !== null) return;
+  const a = last.action, waiting = agent.pending === last.step;
+  const label = (waiting ? 'AI 想要:' : 'AI 正在:') + describe(a);
+  const aim = (x, y, extra) => {
+    const d = el('div', 'aim' + (waiting ? ' wait' : '') + (extra || ''));
+    d.style.left = clamp(x); d.style.top = clamp(y);
+    layer.appendChild(d);
+    return d;
+  };
+  const tag = (x, y) => {
+    const t = el('div', 'aim-label', label);
+    t.style.left = clamp(x); t.style.top = clamp(y);
+    layer.appendChild(t);
+  };
+  if (['tap', 'double_tap', 'long_press'].includes(a.type)) {
+    aim(a.x, a.y);
+    tag(a.x, a.y);
+  } else if (a.type === 'swipe') {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 1000 1000');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    for (const [k, v] of [['x1', a.x1], ['y1', a.y1], ['x2', a.x2], ['y2', a.y2]]) line.setAttribute(k, v);
+    line.setAttribute('stroke', 'var(--warn)');
+    line.setAttribute('stroke-width', '4');
+    line.setAttribute('stroke-dasharray', '10 8');
+    line.setAttribute('vector-effect', 'non-scaling-stroke');
+    svg.appendChild(line);
+    layer.appendChild(svg);
+    aim(a.x1, a.y1);
+    aim(a.x2, a.y2, ' end');
+    tag(a.x1, a.y1);
+  } else {
+    layer.appendChild(el('div', 'aim-banner', label));
+  }
+}
+
+let lastAgent = '';
+function renderAgent(agent) {
+  const key = JSON.stringify([agent.run, agent.steps, agent.pending, agent.running, agent.final]);
+  if (key === lastAgent) return;
+  lastAgent = key;
+  drawTarget(agent);
+
+  // decision panel
+  const pendingStep = agent.steps.find(s => s.step === agent.pending);
+  $('pending').hidden = !pendingStep;
+  if (pendingStep) {
+    $('pendingStep').textContent = `第 ${pendingStep.step} 步,AI 想要:`;
+    $('pendingWhat').textContent = describe(pendingStep.action);
+    $('pendingWhy').textContent = pendingStep.thought ? '理由:' + pendingStep.thought : '';
+  }
+  document.title = pendingStep ? '⏸ 等你確認 · Ghosthand' : 'Ghosthand';
+
+  // timeline
+  const list = $('timeline');
+  const atEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 20;
+  list.textContent = '';
+  for (const s of agent.steps) {
+    const li = el('li', 'step' + (s.result === null && agent.running ? ' now' : ''));
+    const thumb = el('a', 'thumb');
+    thumb.href = `/api/agent/shot?run=${encodeURIComponent(agent.run)}&file=${encodeURIComponent(s.shot)}`;
+    thumb.target = '_blank';
+    thumb.title = '開啟這一步的截圖';
+    const im = el('img');
+    im.src = thumb.href;
+    im.alt = `第 ${s.step} 步的畫面`;
+    im.loading = 'lazy';
+    thumb.appendChild(im);
+    const a = s.action, px = a.x ?? a.x1, py = a.y ?? a.y1;
+    if (px !== undefined && py !== undefined) {
+      const d = el('div', 'dot-aim');
+      d.style.left = clamp(px); d.style.top = clamp(py);
+      thumb.appendChild(d);
+    }
+    const body = el('div', 'body');
+    const head = el('div', 'head');
+    head.appendChild(el('b', '', `第 ${s.step} 步`));
+    const [cls, text] = badge(s, agent);
+    head.appendChild(el('span', 'badge ' + cls, text));
+    body.appendChild(head);
+    body.appendChild(el('div', 'act', describe(a)));
+    if (s.observation) body.appendChild(el('div', 'obs', '看到:' + s.observation));
+    if (s.thought) body.appendChild(el('div', 'why', '理由:' + s.thought));
+    if (s.result && s.result.startsWith('error')) body.appendChild(el('div', 'why', s.result));
+    li.appendChild(thumb);
+    li.appendChild(body);
+    list.appendChild(li);
+  }
+  if (atEnd) list.scrollTop = list.scrollHeight;
+
+  // how the run ended
+  const f = agent.final, box = $('final');
+  box.hidden = agent.running || !f;
+  if (f && !agent.running) {
+    const ok = f.type === 'done';
+    box.className = ok ? 'ok' : 'bad';
+    const reason = { declined: '你停止了這次任務', 'stopped by the owner': '你停止了這次任務',
+                     'step limit': '已達步數上限' }[f.reason] || f.reason || '';
+    box.textContent = ok ? '✓ 完成:' + (f.summary || '') : '已停止:' + reason;
+  }
+}
 
 // ---- status --------------------------------------------------------------
 let mirrorName = 'Pi-Agent', lastLog = '';
@@ -297,6 +513,9 @@ async function refresh() {
   }
   $('agentStart').disabled = s.agent.running;
   $('agentStop').disabled = !s.agent.running;
+  $('confirmEach').disabled = s.agent.running;
+  agentActive = s.agent.running;
+  renderAgent(s.agent);
   const text = s.agent.lines.join('\n');
   if (text !== lastLog) {
     lastLog = text;
@@ -306,13 +525,18 @@ async function refresh() {
     if (atEnd) log.scrollTop = log.scrollHeight;
   }
 }
-setInterval(refresh, 1500);
-refresh();
+// Poll faster while the assistant runs, so its next step and the decision panel show up quickly.
+let agentActive = false;
+(async function statusLoop() {
+  for (;;) {
+    await refresh();
+    await sleep(agentActive ? 600 : 1500);
+  }
+})();
 
 // ---- live screen -----------------------------------------------------------
 // Ask for the next frame as soon as the last one is shown; the server holds the request until
 // the screen changes (up to 3 s). Plain requests recover by themselves after any restart.
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async function frameLoop() {
   let last = '', shown = null;
   for (;;) {
